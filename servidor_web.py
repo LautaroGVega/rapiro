@@ -145,7 +145,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   .sequence-stage { display: grid; grid-template-columns: minmax(220px, 330px) 1fr; gap: 18px; align-items: stretch; }
   .current-sign { border-radius: 26px; background: linear-gradient(155deg, var(--accent-soft), #ffffff); border: 1px solid #d9d5ff; padding: 24px; text-align: center; min-height: 260px; display: grid; place-items: center; }
   .sign-image { width: min(190px, 58vw); height: min(190px, 58vw); object-fit: contain; display: none; margin: 0 auto 8px; }
-  .fallback-letter { width: min(190px, 58vw); height: min(190px, 58vw); margin: 0 auto 10px; border-radius: 40px; display: grid; place-items: center; background: white; border: 2px solid #c9c3ff; color: var(--accent); font-size: 5rem; font-weight: 950; box-shadow: inset 0 0 0 8px #f5f3ff; }
+  .sign-loading { width: min(190px, 58vw); height: min(190px, 58vw); margin: 0 auto 10px; border-radius: 40px; display: grid; place-items: center; background: rgba(255,255,255,.72); border: 2px dashed #c9c3ff; color: var(--muted); font-weight: 900; }
   .missing-note { display: none; margin-top: 10px; padding: 9px 11px; border-radius: 12px; background: #fff7ed; color: #9a3412; font-size: .9rem; font-weight: 700; }
   .sequence-info h3 { font-size: 1.5rem; margin-bottom: 8px; }
   .sequence-meta { color: var(--muted); font-weight: 750; margin-bottom: 16px; }
@@ -257,7 +257,9 @@ let currentIndex = 0;
 let currentPhrase = '';
 let countdownIndex = 0;
 let sequenceTimer = null;
+const LETTER_DURATION_MS = 4000;
 let missingMessages = [];
+let preloadedSignImages = new Map();
 let paused = false;
 
 function cambiarTab(idx) {
@@ -286,6 +288,7 @@ function enviarRespuesta() {
   currentIndex = 0;
   countdownIndex = 0;
   missingMessages = [];
+  preloadedSignImages = new Map();
   paused = false;
   if (!currentSequence.length) {
     renderInitialState('No hay letras reproducibles. Escribí al menos una letra para generar señas.');
@@ -294,7 +297,15 @@ function enviarRespuesta() {
   respHistorial.unshift({ texto, hora: new Date().toLocaleTimeString() });
   actualizarRespHistorial();
   fetch('/api/respuesta', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto}) });
+  precargarImagenesSecuencia();
   iniciarConteo();
+}
+function precargarImagenesSecuencia() {
+  [...new Set(currentSequence)].filter(letra => SUPPORTED_CHARS.includes(letra)).forEach(letra => {
+    const img = new Image();
+    img.src = SIGN_IMAGE_BASE + encodeURIComponent(letra) + SIGN_IMAGE_EXT;
+    preloadedSignImages.set(letra, img);
+  });
 }
 function iniciarConteo() {
   replyState = 'countdown';
@@ -321,7 +332,7 @@ function reproducirLetraActual() {
   }
   renderPlaying();
   currentIndex += 1;
-  sequenceTimer = setTimeout(reproducirLetraActual, 1000);
+  sequenceTimer = setTimeout(reproducirLetraActual, LETTER_DURATION_MS);
 }
 function togglePausa() {
   if (replyState !== 'playing') return;
@@ -351,7 +362,7 @@ function renderCountdown(value) {
       <div>
         <div class="reply-status playing">Preparando secuencia</div>
         <div class="countdown-number" key="${escapeHTML(value)}">${escapeHTML(value)}</div>
-        <p class="sequence-message">Las señas se mostrarán una por una durante 1 segundo.</p>
+        <p class="sequence-message">Las señas se mostrarán una por una durante 4 segundos.</p>
       </div>
     </div>`;
 }
@@ -365,10 +376,9 @@ function renderPlaying() {
     <div class="sequence-stage">
       <div class="current-sign">
         <div>
-          <img id="signImage" class="sign-image" alt="Imagen de seña LSA para la letra ${escapeHTML(letra)}">
-          <div id="fallbackLetter" class="fallback-letter">${escapeHTML(letra)}</div>
-          <div class="texto-label">Letra actual</div>
-          <h3>${escapeHTML(letra)}</h3>
+          <img id="signImage" class="sign-image" alt="Imagen de seña LSA para la letra actual">
+          <div id="signLoading" class="sign-loading">Cargando imagen…</div>
+          <div class="texto-label">Seña actual</div>
           <div class="missing-note" id="missingNote"></div>
         </div>
       </div>
@@ -376,7 +386,7 @@ function renderPlaying() {
         <div class="reply-status playing">${paused ? 'Secuencia pausada' : 'Reproduciendo'}</div>
         <h3>Letra ${currentIndex + 1} de ${currentSequence.length}</h3>
         <div class="sequence-meta">Frase a generar: ${escapeHTML(currentPhrase)}</div>
-        <p class="sequence-message">${escapeHTML(LSA_DESC[letra] || 'No hay imagen disponible para este carácter; se muestra la letra como referencia y la secuencia continúa.')}</p>
+        <p class="sequence-message">${escapeHTML(LSA_DESC[letra] || 'No hay imagen disponible para este carácter; la secuencia continúa.')}</p>
         <div class="controls">
           <button class="btn btn-secondary" onclick="togglePausa()">${paused ? '▶ Reanudar' : '⏸ Pausar'}</button>
           <button class="btn btn-ghost" onclick="limpiarSenas()">↺ Reiniciar</button>
@@ -385,22 +395,33 @@ function renderPlaying() {
     </div>`;
   const img = document.getElementById('signImage');
   const note = document.getElementById('missingNote');
+  const loading = document.getElementById('signLoading');
   if (!supported) {
     const msg = `No hay imagen disponible para el carácter: ${letra}`;
     registrarFaltante(msg);
     note.textContent = msg;
     note.style.display = 'block';
+    loading.style.display = 'none';
     return;
   }
-  img.src = imgPath;
-  img.onload = () => { img.style.display = 'block'; };
+  const preloaded = preloadedSignImages.get(letra);
+  if (preloaded && preloaded.complete && preloaded.naturalWidth > 0) {
+    img.style.display = 'block';
+    loading.style.display = 'none';
+  }
+  img.onload = () => {
+    img.style.display = 'block';
+    loading.style.display = 'none';
+  };
   img.onerror = () => {
     const msg = `No se encontró la imagen ${letra}${SIGN_IMAGE_EXT}. Cargala en static/lsa/ para verla.`;
     registrarFaltante(msg);
     img.style.display = 'none';
     note.textContent = msg;
     note.style.display = 'block';
+    loading.style.display = 'none';
   };
+  img.src = imgPath;
 }
 function registrarFaltante(msg) {
   if (!missingMessages.includes(msg)) missingMessages.push(msg);
