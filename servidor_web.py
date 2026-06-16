@@ -137,6 +137,10 @@ HTML_PAGE = r"""<!DOCTYPE html>
   .final-card { border: 1px solid rgba(22, 163, 74, .35); background: #f0fdf4; color: #14532d; border-radius: 22px; padding: 20px; box-shadow: 0 12px 32px rgba(22, 163, 74, .10); }
   .final-card h3 { font-size: clamp(1.5rem, 4vw, 2.1rem); margin-bottom: 8px; }
   .final-phrase { margin-top: 12px; padding: 16px; border-radius: 16px; background: white; color: var(--text); font-size: clamp(1.7rem, 5vw, 2.8rem); font-weight: 950; word-break: break-word; }
+  .final-images-title { margin-top: 18px; font-weight: 950; color: var(--text); }
+  .final-images-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px; }
+  .final-image-card { min-height: 116px; border-radius: 18px; background: white; border: 1px solid rgba(22, 163, 74, .22); display: grid; place-items: center; padding: 10px; }
+  .final-image-card img { width: 100%; max-width: 96px; aspect-ratio: 1; object-fit: contain; }
   .unsupported-list { margin-top: 12px; display: grid; gap: 8px; }
   .unsupported-item { padding: 10px 12px; border-radius: 12px; background: #fff7ed; color: #9a3412; font-weight: 800; }
 
@@ -426,11 +430,24 @@ function renderPlaying() {
 function registrarFaltante(msg) {
   if (!missingMessages.includes(msg)) missingMessages.push(msg);
 }
+function imagenesUsadasHTML() {
+  const imagenes = currentSequence.filter(letra => SUPPORTED_CHARS.includes(letra));
+  if (!imagenes.length) return '';
+  return `
+    <div class="final-images-title">Imágenes utilizadas:</div>
+    <div class="final-images-grid">
+      ${imagenes.map(letra => {
+        const imgPath = SIGN_IMAGE_BASE + encodeURIComponent(letra) + SIGN_IMAGE_EXT;
+        return `<div class="final-image-card"><img src="${imgPath}" alt="Imagen de seña LSA utilizada" onerror="this.closest('.final-image-card').style.display='none'"></div>`;
+      }).join('')}
+    </div>`;
+}
 function finalizarSecuencia() {
   limpiarTimers();
   replyState = 'finished';
   setGeneratingDisabled(false);
   const warnings = missingMessages.length ? `<div class="unsupported-list">${missingMessages.map(m => `<div class="unsupported-item">${escapeHTML(m)}</div>`).join('')}</div>` : '';
+  const usedImages = imagenesUsadasHTML();
   const container = document.getElementById('senasContainer');
   container.className = 'sequence-shell visible';
   container.innerHTML = `
@@ -439,6 +456,7 @@ function finalizarSecuencia() {
       <h3>Secuencia finalizada</h3>
       <p>Frase generada:</p>
       <div class="final-phrase">${escapeHTML(currentPhrase)}</div>
+      ${usedImages}
       ${warnings}
       <div class="controls"><button class="btn btn-ghost" onclick="limpiarSenas()">↺ Reiniciar</button></div>
     </div>`;
