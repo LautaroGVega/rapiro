@@ -126,6 +126,20 @@ HTML_PAGE = r"""<!DOCTYPE html>
   .btn-primary { background: var(--primary); color: white; }
   .btn-secondary { background: #e8f4f5; color: var(--primary-strong); }
   .btn-ghost { background: #f2f5f8; color: var(--muted); }
+
+  .reply-status { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 9px 14px; border-radius: 999px; font-size: .82rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; background: #eef6ff; color: #1e3a8a; }
+  .reply-status.playing { background: #dcfce7; color: #166534; }
+  .reply-status.finished { background: var(--accent-soft); color: #4c1d95; }
+  .reply-status.warning { background: #fff7ed; color: #9a3412; }
+  .sequence-message { color: var(--muted); line-height: 1.55; font-weight: 750; }
+  .countdown-number { font-size: clamp(7rem, 26vw, 13rem); line-height: .9; font-weight: 950; color: var(--primary); text-align: center; text-shadow: 0 18px 35px rgba(15, 118, 110, .20); animation: pulseCount .65s ease; }
+  @keyframes pulseCount { 0% { transform: scale(.82); opacity: .25; } 70% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+  .final-card { border: 1px solid rgba(22, 163, 74, .35); background: #f0fdf4; color: #14532d; border-radius: 22px; padding: 20px; box-shadow: 0 12px 32px rgba(22, 163, 74, .10); }
+  .final-card h3 { font-size: clamp(1.5rem, 4vw, 2.1rem); margin-bottom: 8px; }
+  .final-phrase { margin-top: 12px; padding: 16px; border-radius: 16px; background: white; color: var(--text); font-size: clamp(1.7rem, 5vw, 2.8rem); font-weight: 950; word-break: break-word; }
+  .unsupported-list { margin-top: 12px; display: grid; gap: 8px; }
+  .unsupported-item { padding: 10px 12px; border-radius: 12px; background: #fff7ed; color: #9a3412; font-weight: 800; }
+
   .sequence-shell { margin-top: 20px; display: none; }
   .sequence-shell.visible { display: grid; gap: 16px; }
   .sequence-stage { display: grid; grid-template-columns: minmax(220px, 330px) 1fr; gap: 18px; align-items: stretch; }
@@ -212,8 +226,8 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <label class="texto-label" for="inputResp">Texto de la persona oyente</label>
       <div class="input-row">
         <input type="text" class="input-texto" id="inputResp" placeholder="Ej.: HOLA" maxlength="80" autocomplete="off">
-        <button class="btn btn-primary" onclick="enviarRespuesta()">Generar señas</button>
-        <button class="btn btn-ghost" onclick="limpiarSenas()">Limpiar</button>
+        <button class="btn btn-primary" id="generateBtn" onclick="enviarRespuesta()">Generar señas</button>
+        <button class="btn btn-ghost" onclick="limpiarSenas()">Reiniciar</button>
       </div>
       <p class="help-text" style="margin-top:12px">Se ignoran espacios para reproducir la secuencia y los caracteres sin imagen disponible se marcan con aviso.</p>
     </div>
@@ -232,13 +246,19 @@ const LSA_DESC = {
   'K': 'Índice y medio en V', 'L': 'Pulgar e índice en L', 'M': 'Tres dedos sobre el pulgar', 'N': 'Dos dedos sobre el pulgar',
   'O': 'Dedos formando círculo', 'P': 'Similar a K hacia abajo', 'Q': 'Índice y pulgar hacia abajo', 'R': 'Índice y medio cruzados',
   'S': 'Puño cerrado cerca de la cara', 'T': 'Pulgar entre índice y medio', 'U': 'Índice y medio juntos', 'V': 'Índice y medio en V',
-  'W': 'Tres dedos abiertos', 'X': 'Índice doblado', 'Y': 'Pulgar y meñique extendidos', 'Z': 'Índice traza una Z', 'Ñ': 'Seña de Ñ'
+  'W': 'Tres dedos abiertos', 'X': 'Índice doblado', 'Y': 'Pulgar y meñique extendidos', 'Z': 'Índice traza una Z'
 };
 const SUPPORTED_CHARS = Object.keys(LSA_DESC);
+const COUNTDOWN_VALUES = ['3', '2', '1'];
 let respHistorial = [];
+let replyState = 'idle';
 let currentSequence = [];
 let currentIndex = 0;
-let playTimer = null;
+let currentPhrase = '';
+let countdownIndex = 0;
+let sequenceTimer = null;
+let missingMessages = [];
+let paused = false;
 
 function cambiarTab(idx) {
   document.querySelectorAll('.mode-card').forEach((t,i) => t.classList.toggle('active', i===idx));
@@ -248,85 +268,171 @@ function normalizarTexto(valor) {
   return valor.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 }
 function caracteresSecuencia(texto) { return normalizarTexto(texto).replace(/\s/g, '').split(''); }
+function setGeneratingDisabled(disabled) {
+  const btn = document.getElementById('generateBtn');
+  if (btn) btn.disabled = disabled;
+}
 function enviarRespuesta() {
+  if (replyState === 'countdown' || replyState === 'playing') return;
   const input = document.getElementById('inputResp');
   const texto = normalizarTexto(input.value);
-  if (!texto) return;
+  if (!texto) {
+    renderInitialState('Escribí una palabra o frase para generar las señas en LSA.');
+    return;
+  }
+  limpiarTimers();
+  currentPhrase = texto;
   currentSequence = caracteresSecuencia(texto);
   currentIndex = 0;
-  pausarSecuencia();
-  renderSecuencia(texto);
+  countdownIndex = 0;
+  missingMessages = [];
+  paused = false;
+  if (!currentSequence.length) {
+    renderInitialState('No hay letras reproducibles. Escribí al menos una letra para generar señas.');
+    return;
+  }
   respHistorial.unshift({ texto, hora: new Date().toLocaleTimeString() });
   actualizarRespHistorial();
   fetch('/api/respuesta', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto}) });
+  iniciarConteo();
 }
-function renderSecuencia(textoOriginal) {
-  const container = document.getElementById('senasContainer');
-  if (!currentSequence.length) {
-    container.className = 'sequence-shell visible';
-    container.innerHTML = '<div class="empty-state">No hay letras reproducibles. Escribí una palabra para generar señas.</div>';
+function iniciarConteo() {
+  replyState = 'countdown';
+  setGeneratingDisabled(true);
+  renderCountdown(COUNTDOWN_VALUES[countdownIndex]);
+  sequenceTimer = setTimeout(avanzarConteo, 1000);
+}
+function avanzarConteo() {
+  countdownIndex += 1;
+  if (countdownIndex < COUNTDOWN_VALUES.length) {
+    renderCountdown(COUNTDOWN_VALUES[countdownIndex]);
+    sequenceTimer = setTimeout(avanzarConteo, 1000);
     return;
   }
+  replyState = 'playing';
+  currentIndex = 0;
+  reproducirLetraActual();
+}
+function reproducirLetraActual() {
+  if (replyState !== 'playing' || paused) return;
+  if (currentIndex >= currentSequence.length) {
+    finalizarSecuencia();
+    return;
+  }
+  renderPlaying();
+  currentIndex += 1;
+  sequenceTimer = setTimeout(reproducirLetraActual, 1000);
+}
+function togglePausa() {
+  if (replyState !== 'playing') return;
+  paused = !paused;
+  if (paused) {
+    limpiarTimers(false);
+    renderPlaying();
+  } else {
+    reproducirLetraActual();
+  }
+}
+function limpiarTimers(resetPaused = true) {
+  if (sequenceTimer) clearTimeout(sequenceTimer);
+  sequenceTimer = null;
+  if (resetPaused) paused = false;
+}
+function renderInitialState(message = 'Escribí una palabra o frase para generar las señas en LSA.') {
+  const container = document.getElementById('senasContainer');
+  container.className = 'sequence-shell visible';
+  container.innerHTML = `<div class="empty-state">${escapeHTML(message)}</div>`;
+}
+function renderCountdown(value) {
+  const container = document.getElementById('senasContainer');
+  container.className = 'sequence-shell visible';
+  container.innerHTML = `
+    <div class="current-sign" aria-live="assertive">
+      <div>
+        <div class="reply-status playing">Preparando secuencia</div>
+        <div class="countdown-number" key="${escapeHTML(value)}">${escapeHTML(value)}</div>
+        <p class="sequence-message">Las señas se mostrarán una por una durante 1 segundo.</p>
+      </div>
+    </div>`;
+}
+function renderPlaying() {
+  const letra = currentSequence[currentIndex] || '';
+  const supported = SUPPORTED_CHARS.includes(letra);
+  const imgPath = SIGN_IMAGE_BASE + encodeURIComponent(letra) + SIGN_IMAGE_EXT;
+  const container = document.getElementById('senasContainer');
   container.className = 'sequence-shell visible';
   container.innerHTML = `
     <div class="sequence-stage">
       <div class="current-sign">
         <div>
-          <img id="signImage" class="sign-image" alt="Imagen de seña LSA">
-          <div id="fallbackLetter" class="fallback-letter"></div>
-          <div class="texto-label" id="currentDesc"></div>
-          <div class="missing-note" id="missingNote">Imagen no disponible: se muestra la letra como referencia visual.</div>
+          <img id="signImage" class="sign-image" alt="Imagen de seña LSA para la letra ${escapeHTML(letra)}">
+          <div id="fallbackLetter" class="fallback-letter">${escapeHTML(letra)}</div>
+          <div class="texto-label">Letra actual</div>
+          <h3>${escapeHTML(letra)}</h3>
+          <div class="missing-note" id="missingNote"></div>
         </div>
       </div>
       <div class="sequence-info">
-        <div class="texto-label">Palabra/frase original</div>
-        <h3>${escapeHTML(textoOriginal)}</h3>
-        <div class="sequence-meta" id="sequenceMeta"></div>
+        <div class="reply-status playing">${paused ? 'Secuencia pausada' : 'Reproduciendo'}</div>
+        <h3>Letra ${currentIndex + 1} de ${currentSequence.length}</h3>
+        <div class="sequence-meta">Frase a generar: ${escapeHTML(currentPhrase)}</div>
+        <p class="sequence-message">${escapeHTML(LSA_DESC[letra] || 'No hay imagen disponible para este carácter; se muestra la letra como referencia y la secuencia continúa.')}</p>
         <div class="controls">
-          <button class="btn btn-secondary" onclick="anteriorSena()">← Anterior</button>
-          <button class="btn btn-primary" id="playBtn" onclick="reproducirSecuencia()">▶ Reproducir secuencia</button>
-          <button class="btn btn-secondary" onclick="pausarSecuencia()">⏸ Pausar</button>
-          <button class="btn btn-ghost" onclick="reiniciarSecuencia()">↺ Reiniciar</button>
-          <button class="btn btn-secondary" onclick="siguienteSena()">Siguiente →</button>
-          <label class="speed-control">Velocidad
-            <select class="speed-select" id="speedSelect"><option value="1600">Lenta</option><option value="1000" selected>Normal</option><option value="650">Rápida</option></select>
-          </label>
+          <button class="btn btn-secondary" onclick="togglePausa()">${paused ? '▶ Reanudar' : '⏸ Pausar'}</button>
+          <button class="btn btn-ghost" onclick="limpiarSenas()">↺ Reiniciar</button>
         </div>
-        <div class="senas-grid" id="senasGrid"></div>
       </div>
     </div>`;
-  const grid = document.getElementById('senasGrid');
-  currentSequence.forEach((letra, i) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'sena-card' + (SUPPORTED_CHARS.includes(letra) ? '' : ' unsupported');
-    card.style.animationDelay = (i * 0.05) + 's';
-    card.onclick = () => { currentIndex = i; actualizarSenaActual(); };
-    card.innerHTML = `<div class="sena-letra">${escapeHTML(letra)}</div><div class="sena-desc">${escapeHTML(LSA_DESC[letra] || 'Sin imagen disponible')}</div>`;
-    grid.appendChild(card);
-  });
-  actualizarSenaActual();
-}
-function actualizarSenaActual() {
-  if (!currentSequence.length) return;
-  const letra = currentSequence[currentIndex];
-  document.getElementById('fallbackLetter').textContent = letra;
-  document.getElementById('currentDesc').textContent = LSA_DESC[letra] || 'Letra sin recurso visual cargado';
-  document.getElementById('sequenceMeta').textContent = `Seña ${currentIndex + 1} de ${currentSequence.length}: ${letra}`;
-  document.getElementById('missingNote').style.display = SUPPORTED_CHARS.includes(letra) ? 'none' : 'block';
   const img = document.getElementById('signImage');
-  img.style.display = 'none';
-  img.src = SIGN_IMAGE_BASE + encodeURIComponent(letra) + SIGN_IMAGE_EXT;
+  const note = document.getElementById('missingNote');
+  if (!supported) {
+    const msg = `No hay imagen disponible para el carácter: ${letra}`;
+    registrarFaltante(msg);
+    note.textContent = msg;
+    note.style.display = 'block';
+    return;
+  }
+  img.src = imgPath;
   img.onload = () => { img.style.display = 'block'; };
-  img.onerror = () => { img.style.display = 'none'; document.getElementById('missingNote').style.display = 'block'; };
-  document.querySelectorAll('.sena-card').forEach((card, i) => card.classList.toggle('active', i === currentIndex));
+  img.onerror = () => {
+    const msg = `No se encontró la imagen ${letra}${SIGN_IMAGE_EXT}. Cargala en static/lsa/ para verla.`;
+    registrarFaltante(msg);
+    img.style.display = 'none';
+    note.textContent = msg;
+    note.style.display = 'block';
+  };
 }
-function siguienteSena() { if (!currentSequence.length) return; currentIndex = (currentIndex + 1) % currentSequence.length; actualizarSenaActual(); }
-function anteriorSena() { if (!currentSequence.length) return; currentIndex = (currentIndex - 1 + currentSequence.length) % currentSequence.length; actualizarSenaActual(); }
-function reproducirSecuencia() { pausarSecuencia(); const speed = Number(document.getElementById('speedSelect')?.value || 1000); playTimer = setInterval(siguienteSena, speed); }
-function pausarSecuencia() { if (playTimer) clearInterval(playTimer); playTimer = null; }
-function reiniciarSecuencia() { pausarSecuencia(); currentIndex = 0; actualizarSenaActual(); }
-function limpiarSenas() { pausarSecuencia(); currentSequence = []; currentIndex = 0; document.getElementById('senasContainer').className = 'sequence-shell'; document.getElementById('senasContainer').innerHTML = ''; document.getElementById('inputResp').value = ''; }
+function registrarFaltante(msg) {
+  if (!missingMessages.includes(msg)) missingMessages.push(msg);
+}
+function finalizarSecuencia() {
+  limpiarTimers();
+  replyState = 'finished';
+  setGeneratingDisabled(false);
+  const warnings = missingMessages.length ? `<div class="unsupported-list">${missingMessages.map(m => `<div class="unsupported-item">${escapeHTML(m)}</div>`).join('')}</div>` : '';
+  const container = document.getElementById('senasContainer');
+  container.className = 'sequence-shell visible';
+  container.innerHTML = `
+    <div class="final-card">
+      <div class="reply-status finished">Secuencia finalizada</div>
+      <h3>Secuencia finalizada</h3>
+      <p>Frase generada:</p>
+      <div class="final-phrase">${escapeHTML(currentPhrase)}</div>
+      ${warnings}
+      <div class="controls"><button class="btn btn-ghost" onclick="limpiarSenas()">↺ Reiniciar</button></div>
+    </div>`;
+}
+function limpiarSenas() {
+  limpiarTimers();
+  replyState = 'idle';
+  currentSequence = [];
+  currentIndex = 0;
+  currentPhrase = '';
+  missingMessages = [];
+  setGeneratingDisabled(false);
+  document.getElementById('inputResp').value = '';
+  renderInitialState();
+}
 function actualizarRespHistorial() {
   const el = document.getElementById('respHistorial');
   if (respHistorial.length === 0) { el.innerHTML = ''; return; }
@@ -334,6 +440,7 @@ function actualizarRespHistorial() {
 }
 function escapeHTML(value) { return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.id === 'inputResp') enviarRespuesta(); });
+document.addEventListener('DOMContentLoaded', () => renderInitialState());
 async function actualizar() {
   try {
     const res = await fetch('/api/estado');
