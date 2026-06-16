@@ -2,7 +2,7 @@
 Servidor web — Traductor LSA bidireccional
 --------------------------------------------
 Sección 1: Muestra las señas detectadas en tiempo real
-Sección 2: Respuesta en imágenes LSA (persona no sorda escribe y se muestra en señas)
+Sección 2: Respuesta en imágenes LSA (persona oyente escribe y se muestra en señas)
 
 Deploy en Render.
 """
@@ -26,369 +26,349 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RAPIRO LSA - Traductor de Lengua de Senas</title>
+<title>RAPIRO LSA - Comunicación bidireccional</title>
 <style>
+  :root {
+    --bg: #eef7f7;
+    --surface: rgba(255, 255, 255, 0.9);
+    --surface-strong: #ffffff;
+    --text: #17324d;
+    --muted: #60758a;
+    --primary: #0f766e;
+    --primary-strong: #0b5f59;
+    --accent: #6d5dfc;
+    --accent-soft: #ebe9ff;
+    --success: #16a34a;
+    --warning: #f59e0b;
+    --danger: #dc2626;
+    --border: #d8e8ea;
+    --shadow: 0 18px 50px rgba(15, 118, 110, 0.13);
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: #0f1117;
-    color: #e4e4e7;
+    font-family: Inter, 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     min-height: 100vh;
-    padding: 30px 20px;
+    color: var(--text);
+    background:
+      radial-gradient(circle at top left, rgba(45, 212, 191, 0.24), transparent 34rem),
+      linear-gradient(135deg, #f7fbff 0%, #eaf7f4 48%, #f7f3ff 100%);
+    padding: 28px 18px 44px;
   }
-  .container { max-width: 900px; margin: 0 auto; }
-  h1 {
-    font-size: 1.3rem;
-    font-weight: 500;
-    color: #71717a;
-    margin-bottom: 30px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
+  .container { max-width: 1120px; margin: 0 auto; }
+  .hero {
     text-align: center;
+    padding: 34px 24px 22px;
   }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 999px;
+    background: rgba(15, 118, 110, 0.10); color: var(--primary-strong);
+    font-weight: 800; font-size: 0.78rem; letter-spacing: .08em; text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: clamp(2.4rem, 7vw, 4.6rem); line-height: .95; letter-spacing: -0.06em; }
+  .subtitle { max-width: 760px; margin: 18px auto 0; color: var(--muted); font-size: clamp(1rem, 2.4vw, 1.25rem); line-height: 1.55; }
+  .mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 18px 0 28px; }
+  .mode-card {
+    width: 100%; border: 1px solid var(--border); border-radius: 26px; padding: 24px;
+    background: var(--surface); box-shadow: var(--shadow); text-align: left; color: inherit;
+    cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .mode-card:hover, .mode-card.active { transform: translateY(-3px); border-color: rgba(15, 118, 110, .42); box-shadow: 0 22px 60px rgba(15, 118, 110, .18); }
+  .mode-card.active { outline: 3px solid rgba(15, 118, 110, .12); background: #fbffff; }
+  .mode-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 18px; font-size: 1.8rem; background: var(--accent-soft); margin-bottom: 16px; }
+  .mode-card:first-child .mode-icon { background: #dff8f3; }
+  .mode-card h2 { font-size: clamp(1.35rem, 3vw, 1.8rem); margin-bottom: 10px; }
+  .mode-card p { color: var(--muted); line-height: 1.55; font-size: 1rem; }
+  .panel { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 30px; box-shadow: var(--shadow); padding: clamp(18px, 3vw, 30px); }
+  .panel.active { display: block; }
+  .section-header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 22px; }
+  .section-header h2 { font-size: clamp(1.45rem, 3vw, 2.1rem); margin-bottom: 8px; }
+  .section-header p, .help-text { color: var(--muted); line-height: 1.55; }
 
-  /* Tabs */
-  .tabs {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 24px;
-    background: #18181b;
-    border-radius: 12px;
-    padding: 4px;
+  .detection-layout { display: grid; grid-template-columns: minmax(260px, .9fr) minmax(300px, 1.1fr); gap: 20px; align-items: stretch; }
+  .camera-zone {
+    border: 2px dashed #a8d8d2; border-radius: 26px; min-height: 350px; padding: 20px;
+    background: linear-gradient(160deg, #063b42 0%, #0f766e 100%); color: white;
+    display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; position: relative;
   }
-  .tab {
-    flex: 1;
-    padding: 12px;
-    text-align: center;
-    border-radius: 10px;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.9rem;
-    transition: all 0.2s;
-    color: #71717a;
-  }
-  .tab.active { background: #27272a; color: #e4e4e7; }
-  .tab:hover:not(.active) { color: #a1a1aa; }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
+  .camera-zone::before { content: ''; position: absolute; inset: 18px; border: 1px solid rgba(255,255,255,.22); border-radius: 22px; pointer-events: none; }
+  .camera-label { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 10px; font-weight: 800; }
+  .camera-visual { position: relative; z-index: 1; display: grid; place-items: center; gap: 8px; text-align: center; color: rgba(255,255,255,.83); }
+  .camera-visual .hand { font-size: 4.4rem; filter: drop-shadow(0 16px 20px rgba(0,0,0,.22)); }
+  .result-card, .message-card, .history-card, .reply-card { background: var(--surface-strong); border: 1px solid var(--border); border-radius: 24px; padding: 22px; }
+  .result-card { text-align: center; margin-bottom: 16px; }
+  .letra-actual { font-size: clamp(5rem, 15vw, 8rem); font-weight: 900; color: var(--primary); line-height: 1; min-height: 120px; transition: all .2s; }
+  .letra-actual.nada { color: #9aa9b5; }
+  .letra-actual.finalizar { color: var(--accent); }
+  .confianza { color: var(--muted); min-height: 24px; font-weight: 700; }
+  .estado-badge { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px; font-size: .8rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; margin-top: 14px; }
+  .estado-badge.activo { background: #dcfce7; color: #166534; }
+  .estado-badge.esperando { background: #fef3c7; color: #92400e; }
+  .estado-badge.completado { background: var(--accent-soft); color: #4c1d95; }
+  .texto-label { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 900; margin-bottom: 10px; }
+  .texto-formado { font-size: clamp(1.7rem, 5vw, 2.7rem); font-weight: 850; color: var(--text); background: #f8fbfc; border: 1px solid var(--border); border-radius: 18px; padding: 22px; min-height: 86px; word-break: break-word; }
+  .texto-formado.finalizado { border-color: rgba(22, 163, 74, .45); box-shadow: 0 0 0 4px rgba(22, 163, 74, .10); color: var(--success); }
+  .cursor { animation: blink 1s infinite; color: var(--primary); }
+  @keyframes blink { 0%,50%{opacity:1;} 51%,100%{opacity:0;} }
+  .historial { margin-top: 16px; }
+  .historial-item, .resp-item { background: #f8fbfc; border: 1px solid var(--border); border-radius: 16px; padding: 13px 15px; margin-top: 8px; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .historial-texto, .resp-texto { font-weight: 750; color: var(--text); }
+  .historial-hora, .resp-hora { color: var(--muted); font-size: .82rem; white-space: nowrap; }
 
-  /* Seccion 1: Deteccion */
-  .letra-actual {
-    font-size: 7rem;
-    font-weight: 700;
-    color: #22c55e;
-    line-height: 1;
-    min-height: 120px;
-    text-align: center;
-    transition: all 0.2s;
+  .input-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-top: 14px; }
+  .input-texto, .speed-select { padding: 15px 16px; font-size: 1.05rem; border: 1px solid #bfd7dc; border-radius: 15px; color: var(--text); background: #fbffff; outline: none; }
+  .input-texto { font-weight: 750; text-transform: uppercase; }
+  .input-texto:focus, .speed-select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(15,118,110,.12); }
+  .btn { border: 0; border-radius: 15px; padding: 14px 18px; font-weight: 900; cursor: pointer; transition: transform .15s ease, filter .15s ease, background .15s ease; font-size: .97rem; }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(.98); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-secondary { background: #e8f4f5; color: var(--primary-strong); }
+  .btn-ghost { background: #f2f5f8; color: var(--muted); }
+  .sequence-shell { margin-top: 20px; display: none; }
+  .sequence-shell.visible { display: grid; gap: 16px; }
+  .sequence-stage { display: grid; grid-template-columns: minmax(220px, 330px) 1fr; gap: 18px; align-items: stretch; }
+  .current-sign { border-radius: 26px; background: linear-gradient(155deg, var(--accent-soft), #ffffff); border: 1px solid #d9d5ff; padding: 24px; text-align: center; min-height: 260px; display: grid; place-items: center; }
+  .sign-image { width: min(190px, 58vw); height: min(190px, 58vw); object-fit: contain; display: none; margin: 0 auto 8px; }
+  .fallback-letter { width: min(190px, 58vw); height: min(190px, 58vw); margin: 0 auto 10px; border-radius: 40px; display: grid; place-items: center; background: white; border: 2px solid #c9c3ff; color: var(--accent); font-size: 5rem; font-weight: 950; box-shadow: inset 0 0 0 8px #f5f3ff; }
+  .missing-note { display: none; margin-top: 10px; padding: 9px 11px; border-radius: 12px; background: #fff7ed; color: #9a3412; font-size: .9rem; font-weight: 700; }
+  .sequence-info h3 { font-size: 1.5rem; margin-bottom: 8px; }
+  .sequence-meta { color: var(--muted); font-weight: 750; margin-bottom: 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; }
+  .speed-control { display: flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 800; }
+  .senas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 12px; margin-top: 14px; }
+  .sena-card { background: #fbffff; border: 2px solid #d7d2ff; border-radius: 18px; padding: 12px 8px; text-align: center; animation: aparecer .35s ease-out forwards; opacity: 0; transform: translateY(12px); cursor: pointer; }
+  .sena-card.active { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(109,93,252,.12); }
+  .sena-card.unsupported { border-color: #fed7aa; background: #fff7ed; }
+  .sena-letra { font-size: 2.3rem; font-weight: 950; color: var(--accent); line-height: 1; }
+  .sena-card.unsupported .sena-letra { color: var(--warning); }
+  .sena-desc { color: var(--muted); font-size: .72rem; line-height: 1.25; margin-top: 7px; min-height: 28px; }
+  @keyframes aparecer { to { opacity: 1; transform: translateY(0); } }
+  .empty-state { border: 1px dashed #bcd7dc; border-radius: 20px; padding: 24px; color: var(--muted); text-align: center; background: rgba(255,255,255,.52); }
+  @media (max-width: 820px) {
+    body { padding: 18px 12px 30px; }
+    .mode-grid, .detection-layout, .sequence-stage { grid-template-columns: 1fr; }
+    .section-header { flex-direction: column; }
+    .input-row { grid-template-columns: 1fr; }
+    .camera-zone { min-height: 260px; }
+    .controls .btn, .speed-control, .speed-select { width: 100%; justify-content: center; }
   }
-  .letra-actual.nada { color: #3f3f46; }
-  .letra-actual.finalizar { color: #a855f7; }
-  .confianza { font-size: 1.1rem; color: #71717a; margin-top: 8px; text-align: center; min-height: 22px; }
-  .estado-badge {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-top: 16px;
-  }
-  .estado-badge.activo { background: #052e16; color: #22c55e; }
-  .estado-badge.esperando { background: #1c1917; color: #78716c; }
-  .estado-badge.completado { background: #1e1b4b; color: #a855f7; }
-  .texto-container { margin-top: 36px; }
-  .texto-label {
-    font-size: 0.8rem; color: #52525b; text-transform: uppercase;
-    letter-spacing: 1px; margin-bottom: 10px;
-  }
-  .texto-formado {
-    font-size: 2.4rem; font-weight: 600; color: #e4e4e7;
-    background: #18181b; border: 1px solid #27272a; border-radius: 14px;
-    padding: 24px 30px; min-height: 80px; word-wrap: break-word; transition: all 0.3s;
-  }
-  .texto-formado.finalizado {
-    border-color: #22c55e; box-shadow: 0 0 30px rgba(34,197,94,0.15); color: #22c55e;
-  }
-  .cursor { animation: blink 1s infinite; }
-  @keyframes blink { 0%,50% { opacity:1; } 51%,100% { opacity:0; } }
-
-  .historial { margin-top: 30px; }
-  .historial-item {
-    background: #18181b; border: 1px solid #27272a; border-radius: 10px;
-    padding: 14px 18px; margin-top: 8px;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .historial-texto { font-size: 1rem; color: #a1a1aa; }
-  .historial-hora { font-size: 0.75rem; color: #52525b; }
-
-  /* Seccion 2: Responder */
-  .responder-area {
-    background: #18181b; border: 1px solid #27272a; border-radius: 14px;
-    padding: 24px; margin-bottom: 24px;
-  }
-  .responder-label { font-size: 0.95rem; color: #a1a1aa; margin-bottom: 12px; }
-  .input-row { display: flex; gap: 10px; }
-  .input-texto {
-    flex: 1; padding: 14px 18px; font-size: 1.2rem; font-weight: 600;
-    background: #0f1117; border: 1px solid #3f3f46; border-radius: 10px;
-    color: #e4e4e7; outline: none; text-transform: uppercase;
-  }
-  .input-texto:focus { border-color: #a855f7; }
-  .btn-enviar {
-    padding: 14px 28px; font-size: 1rem; font-weight: 700;
-    background: #7c3aed; color: white; border: none; border-radius: 10px;
-    cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
-  }
-  .btn-enviar:hover { background: #6d28d9; }
-  .btn-limpiar {
-    padding: 14px 20px; font-size: 0.9rem; font-weight: 600;
-    background: #27272a; color: #a1a1aa; border: none; border-radius: 10px;
-    cursor: pointer; transition: all 0.2s;
-  }
-  .btn-limpiar:hover { background: #3f3f46; }
-
-  /* Cartas de letras LSA */
-  .senas-grid {
-    display: flex; flex-wrap: wrap; gap: 14px;
-    justify-content: center; margin-top: 24px;
-  }
-  .sena-card {
-    width: 110px; background: #1e1b4b; border: 2px solid #4c1d95;
-    border-radius: 14px; padding: 14px 8px; text-align: center;
-    animation: aparecer 0.4s ease-out forwards;
-    opacity: 0; transform: translateY(20px);
-  }
-  .sena-card.espacio {
-    width: 80px; background: #1c1917; border-color: #44403c;
-  }
-  @keyframes aparecer {
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .sena-letra {
-    font-size: 2.8rem; font-weight: 800; color: #c4b5fd; line-height: 1;
-  }
-  .sena-card.espacio .sena-letra { font-size: 1.2rem; color: #78716c; }
-  .sena-desc {
-    font-size: 0.65rem; color: #8b5cf6; margin-top: 6px;
-    line-height: 1.3; min-height: 28px;
-  }
-
-  .respuesta-historial { margin-top: 20px; }
-  .resp-item {
-    background: #1e1b4b; border: 1px solid #4c1d95; border-radius: 10px;
-    padding: 14px 18px; margin-top: 8px;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .resp-texto { font-size: 1rem; color: #c4b5fd; }
-  .resp-hora { font-size: 0.75rem; color: #6d28d9; }
-
-  .center { text-align: center; }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Rapiro LSA - Comunicacion bidireccional</h1>
+  <header class="hero">
+    <div class="eyebrow">🤝 Tecnología accesible</div>
+    <h1>RAPIRO LSA</h1>
+    <p class="subtitle">Comunicación bidireccional entre persona sorda y persona oyente.</p>
+  </header>
 
-  <div class="tabs">
-    <div class="tab active" onclick="cambiarTab(0)">Deteccion de senas</div>
-    <div class="tab" onclick="cambiarTab(1)">Responder en LSA</div>
-  </div>
+  <nav class="mode-grid" aria-label="Opciones principales">
+    <button class="mode-card active" type="button" onclick="cambiarTab(0)">
+      <div class="mode-icon">🖐️</div>
+      <h2>Detección de señas</h2>
+      <p>La persona sorda realiza una seña frente a la cámara y el sistema la interpreta.</p>
+    </button>
+    <button class="mode-card" type="button" onclick="cambiarTab(1)">
+      <div class="mode-icon">💬</div>
+      <h2>Responder en LSA</h2>
+      <p>La persona oyente escribe una palabra o frase y el sistema la muestra mediante imágenes de señas.</p>
+    </button>
+  </nav>
 
-  <!-- TAB 1: Deteccion -->
-  <div class="tab-content active" id="tab0">
-    <div class="center">
-      <div class="letra-actual" id="letra">-</div>
-      <div class="confianza" id="confianza"></div>
-      <div class="estado-badge esperando" id="estado">Esperando conexion</div>
+  <section class="panel active" id="tab0" aria-live="polite">
+    <div class="section-header">
+      <div><h2>Detectar señas</h2><p>Ubicá la mano dentro de la zona de cámara. El resultado detectado aparecerá en tiempo real.</p></div>
+      <div class="estado-badge esperando" id="estado">Esperando seña…</div>
     </div>
-
-    <div class="texto-container">
-      <div class="texto-label">Mensaje detectado</div>
-      <div class="texto-formado" id="texto"><span class="cursor">|</span></div>
-    </div>
-
-    <div class="historial" id="historial"></div>
-  </div>
-
-  <!-- TAB 2: Responder -->
-  <div class="tab-content" id="tab1">
-    <div class="responder-area">
-      <div class="responder-label">Escribi tu respuesta y se mostrara en Lengua de Senas Argentina:</div>
-      <div class="input-row">
-        <input type="text" class="input-texto" id="inputResp" placeholder="Escribi aca..." maxlength="50">
-        <button class="btn-enviar" onclick="enviarRespuesta()">Mostrar en LSA</button>
-        <button class="btn-limpiar" onclick="limpiarSenas()">Limpiar</button>
+    <div class="detection-layout">
+      <div class="camera-zone">
+        <div class="camera-label"><span>Zona de cámara / detección</span><span>● En vivo</span></div>
+        <div class="camera-visual"><div class="hand">🖐️</div><p>Colocá la seña frente a la cámara del sistema detector.</p></div>
+        <div class="help-text" style="color:rgba(255,255,255,.78)">Estados: Esperando seña → Detectando → Resultado detectado.</div>
+      </div>
+      <div>
+        <div class="result-card">
+          <div class="texto-label">Letra, palabra o acción detectada</div>
+          <div class="letra-actual" id="letra">-</div>
+          <div class="confianza" id="confianza"></div>
+        </div>
+        <div class="message-card">
+          <div class="texto-label">Mensaje detectado</div>
+          <div class="texto-formado" id="texto"><span class="cursor">|</span></div>
+          <p class="help-text" style="margin-top:12px">Cuando el detector finalice el mensaje, se guardará automáticamente en el historial.</p>
+        </div>
+        <div class="historial" id="historial"></div>
       </div>
     </div>
+  </section>
 
-    <div id="senasContainer"></div>
-
+  <section class="panel" id="tab1">
+    <div class="section-header">
+      <div><h2>Responder en LSA</h2><p>Escribí una palabra o frase. Se normaliza a mayúsculas y se muestran las señas letra por letra.</p></div>
+    </div>
+    <div class="reply-card">
+      <label class="texto-label" for="inputResp">Texto de la persona oyente</label>
+      <div class="input-row">
+        <input type="text" class="input-texto" id="inputResp" placeholder="Ej.: HOLA" maxlength="80" autocomplete="off">
+        <button class="btn btn-primary" onclick="enviarRespuesta()">Generar señas</button>
+        <button class="btn btn-ghost" onclick="limpiarSenas()">Limpiar</button>
+      </div>
+      <p class="help-text" style="margin-top:12px">Se ignoran espacios para reproducir la secuencia y los caracteres sin imagen disponible se marcan con aviso.</p>
+    </div>
+    <div id="senasContainer" class="sequence-shell"></div>
     <div class="respuesta-historial" id="respHistorial"></div>
-  </div>
+  </section>
 </div>
 
 <script>
-// Descripciones de cada sena LSA
+const SIGN_IMAGE_BASE = '/static/lsa/';
+const SIGN_IMAGE_EXT = '.png';
 const LSA_DESC = {
-  'A': 'Puno cerrado, pulgar al costado',
-  'B': 'Dedos indice y medio extendidos',
-  'C': 'Mano curvada en forma de C',
-  'D': 'Indice, medio y anular abiertos',
-  'E': 'Mano en C tocando la mejilla',
-  'F': 'Indice y pulgar unidos, resto cerrado',
-  'G': 'Indice apuntando hacia el costado',
-  'H': 'Dedos indice y medio horizontales',
-  'I': 'Menique extendido, resto cerrado',
-  'J': 'Menique traza forma de J',
-  'K': 'Indice y medio en V, pulgar entre ellos',
-  'L': 'Pulgar e indice en forma de L',
-  'M': 'Tres dedos sobre el pulgar en puno',
-  'N': 'Dos dedos sobre el pulgar en puno',
-  'O': 'Dedos unidos formando un circulo',
-  'P': 'Similar a K pero mano hacia abajo',
-  'Q': 'Indice y pulgar hacia abajo',
-  'R': 'Dedos indice y medio cruzados',
-  'S': 'Puno cerrado cerca de la cara',
-  'T': 'Pulgar entre indice y medio cerrados',
-  'U': 'Indice y medio juntos hacia arriba',
-  'V': 'Indice y medio abiertos en V',
-  'W': 'Tres dedos abiertos hacia arriba',
-  'X': 'Indice doblado como gancho',
-  'Y': 'Pulgar y menique extendidos',
-  'Z': 'Indice traza forma de Z en el aire',
-  ' ': 'Espacio',
+  'A': 'Puño cerrado, pulgar al costado', 'B': 'Dedos índice y medio extendidos', 'C': 'Mano curvada en forma de C',
+  'D': 'Índice, medio y anular abiertos', 'E': 'Mano en C tocando la mejilla', 'F': 'Índice y pulgar unidos',
+  'G': 'Índice apuntando al costado', 'H': 'Índice y medio horizontales', 'I': 'Meñique extendido', 'J': 'Meñique traza una J',
+  'K': 'Índice y medio en V', 'L': 'Pulgar e índice en L', 'M': 'Tres dedos sobre el pulgar', 'N': 'Dos dedos sobre el pulgar',
+  'O': 'Dedos formando círculo', 'P': 'Similar a K hacia abajo', 'Q': 'Índice y pulgar hacia abajo', 'R': 'Índice y medio cruzados',
+  'S': 'Puño cerrado cerca de la cara', 'T': 'Pulgar entre índice y medio', 'U': 'Índice y medio juntos', 'V': 'Índice y medio en V',
+  'W': 'Tres dedos abiertos', 'X': 'Índice doblado', 'Y': 'Pulgar y meñique extendidos', 'Z': 'Índice traza una Z', 'Ñ': 'Seña de Ñ'
 };
-
+const SUPPORTED_CHARS = Object.keys(LSA_DESC);
 let respHistorial = [];
+let currentSequence = [];
+let currentIndex = 0;
+let playTimer = null;
 
 function cambiarTab(idx) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===idx));
-  document.querySelectorAll('.tab-content').forEach((c,i) => c.classList.toggle('active', i===idx));
+  document.querySelectorAll('.mode-card').forEach((t,i) => t.classList.toggle('active', i===idx));
+  document.querySelectorAll('.panel').forEach((c,i) => c.classList.toggle('active', i===idx));
 }
-
+function normalizarTexto(valor) {
+  return valor.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+function caracteresSecuencia(texto) { return normalizarTexto(texto).replace(/\s/g, '').split(''); }
 function enviarRespuesta() {
   const input = document.getElementById('inputResp');
-  const texto = input.value.trim().toUpperCase();
+  const texto = normalizarTexto(input.value);
   if (!texto) return;
-
+  currentSequence = caracteresSecuencia(texto);
+  currentIndex = 0;
+  pausarSecuencia();
+  renderSecuencia(texto);
+  respHistorial.unshift({ texto, hora: new Date().toLocaleTimeString() });
+  actualizarRespHistorial();
+  fetch('/api/respuesta', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({texto}) });
+}
+function renderSecuencia(textoOriginal) {
   const container = document.getElementById('senasContainer');
-  container.innerHTML = '';
-
-  const grid = document.createElement('div');
-  grid.className = 'senas-grid';
-
-  texto.split('').forEach((letra, i) => {
-    const card = document.createElement('div');
-    card.className = 'sena-card' + (letra === ' ' ? ' espacio' : '');
-    card.style.animationDelay = (i * 0.15) + 's';
-
-    const letraEl = document.createElement('div');
-    letraEl.className = 'sena-letra';
-    letraEl.textContent = letra === ' ' ? '___' : letra;
-
-    const descEl = document.createElement('div');
-    descEl.className = 'sena-desc';
-    descEl.textContent = LSA_DESC[letra] || '';
-
-    card.appendChild(letraEl);
-    card.appendChild(descEl);
+  if (!currentSequence.length) {
+    container.className = 'sequence-shell visible';
+    container.innerHTML = '<div class="empty-state">No hay letras reproducibles. Escribí una palabra para generar señas.</div>';
+    return;
+  }
+  container.className = 'sequence-shell visible';
+  container.innerHTML = `
+    <div class="sequence-stage">
+      <div class="current-sign">
+        <div>
+          <img id="signImage" class="sign-image" alt="Imagen de seña LSA">
+          <div id="fallbackLetter" class="fallback-letter"></div>
+          <div class="texto-label" id="currentDesc"></div>
+          <div class="missing-note" id="missingNote">Imagen no disponible: se muestra la letra como referencia visual.</div>
+        </div>
+      </div>
+      <div class="sequence-info">
+        <div class="texto-label">Palabra/frase original</div>
+        <h3>${escapeHTML(textoOriginal)}</h3>
+        <div class="sequence-meta" id="sequenceMeta"></div>
+        <div class="controls">
+          <button class="btn btn-secondary" onclick="anteriorSena()">← Anterior</button>
+          <button class="btn btn-primary" id="playBtn" onclick="reproducirSecuencia()">▶ Reproducir secuencia</button>
+          <button class="btn btn-secondary" onclick="pausarSecuencia()">⏸ Pausar</button>
+          <button class="btn btn-ghost" onclick="reiniciarSecuencia()">↺ Reiniciar</button>
+          <button class="btn btn-secondary" onclick="siguienteSena()">Siguiente →</button>
+          <label class="speed-control">Velocidad
+            <select class="speed-select" id="speedSelect"><option value="1600">Lenta</option><option value="1000" selected>Normal</option><option value="650">Rápida</option></select>
+          </label>
+        </div>
+        <div class="senas-grid" id="senasGrid"></div>
+      </div>
+    </div>`;
+  const grid = document.getElementById('senasGrid');
+  currentSequence.forEach((letra, i) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'sena-card' + (SUPPORTED_CHARS.includes(letra) ? '' : ' unsupported');
+    card.style.animationDelay = (i * 0.05) + 's';
+    card.onclick = () => { currentIndex = i; actualizarSenaActual(); };
+    card.innerHTML = `<div class="sena-letra">${escapeHTML(letra)}</div><div class="sena-desc">${escapeHTML(LSA_DESC[letra] || 'Sin imagen disponible')}</div>`;
     grid.appendChild(card);
   });
-
-  container.appendChild(grid);
-
-  // Guardar en historial
-  respHistorial.unshift({ texto: texto, hora: new Date().toLocaleTimeString() });
-  actualizarRespHistorial();
-
-  // Enviar al servidor
-  fetch('/api/respuesta', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({texto: texto})
-  });
-
-  input.value = '';
+  actualizarSenaActual();
 }
-
-function limpiarSenas() {
-  document.getElementById('senasContainer').innerHTML = '';
+function actualizarSenaActual() {
+  if (!currentSequence.length) return;
+  const letra = currentSequence[currentIndex];
+  document.getElementById('fallbackLetter').textContent = letra;
+  document.getElementById('currentDesc').textContent = LSA_DESC[letra] || 'Letra sin recurso visual cargado';
+  document.getElementById('sequenceMeta').textContent = `Seña ${currentIndex + 1} de ${currentSequence.length}: ${letra}`;
+  document.getElementById('missingNote').style.display = SUPPORTED_CHARS.includes(letra) ? 'none' : 'block';
+  const img = document.getElementById('signImage');
+  img.style.display = 'none';
+  img.src = SIGN_IMAGE_BASE + encodeURIComponent(letra) + SIGN_IMAGE_EXT;
+  img.onload = () => { img.style.display = 'block'; };
+  img.onerror = () => { img.style.display = 'none'; document.getElementById('missingNote').style.display = 'block'; };
+  document.querySelectorAll('.sena-card').forEach((card, i) => card.classList.toggle('active', i === currentIndex));
 }
-
+function siguienteSena() { if (!currentSequence.length) return; currentIndex = (currentIndex + 1) % currentSequence.length; actualizarSenaActual(); }
+function anteriorSena() { if (!currentSequence.length) return; currentIndex = (currentIndex - 1 + currentSequence.length) % currentSequence.length; actualizarSenaActual(); }
+function reproducirSecuencia() { pausarSecuencia(); const speed = Number(document.getElementById('speedSelect')?.value || 1000); playTimer = setInterval(siguienteSena, speed); }
+function pausarSecuencia() { if (playTimer) clearInterval(playTimer); playTimer = null; }
+function reiniciarSecuencia() { pausarSecuencia(); currentIndex = 0; actualizarSenaActual(); }
+function limpiarSenas() { pausarSecuencia(); currentSequence = []; currentIndex = 0; document.getElementById('senasContainer').className = 'sequence-shell'; document.getElementById('senasContainer').innerHTML = ''; document.getElementById('inputResp').value = ''; }
 function actualizarRespHistorial() {
   const el = document.getElementById('respHistorial');
   if (respHistorial.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = '<div class="texto-label">Respuestas enviadas</div>' +
-    respHistorial.map(r =>
-      '<div class="resp-item">' +
-        '<span class="resp-texto">' + r.texto + '</span>' +
-        '<span class="resp-hora">' + r.hora + '</span>' +
-      '</div>'
-    ).join('');
+  el.innerHTML = '<div class="texto-label" style="margin-top:18px">Respuestas enviadas</div>' + respHistorial.slice(0,5).map(r => `<div class="resp-item"><span class="resp-texto">${escapeHTML(r.texto)}</span><span class="resp-hora">${r.hora}</span></div>`).join('');
 }
-
-// Enter para enviar
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.activeElement.id === 'inputResp') {
-    enviarRespuesta();
-  }
-});
-
-// Polling de deteccion (tab 1)
+function escapeHTML(value) { return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char])); }
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.id === 'inputResp') enviarRespuesta(); });
 async function actualizar() {
   try {
     const res = await fetch('/api/estado');
     const data = await res.json();
-
     const letraEl = document.getElementById('letra');
     const confEl = document.getElementById('confianza');
     const textoEl = document.getElementById('texto');
     const estadoEl = document.getElementById('estado');
-
     letraEl.textContent = data.letra_actual || '-';
     letraEl.className = 'letra-actual';
     if (data.letra_actual === 'NADA') letraEl.classList.add('nada');
     if (data.letra_actual === 'FINALIZAR') letraEl.classList.add('finalizar');
-
-    if (data.confianza > 0) {
-      confEl.textContent = (data.confianza * 100).toFixed(0) + '% confianza';
-    } else {
-      confEl.textContent = '';
-    }
-
+    confEl.textContent = data.confianza > 0 ? (data.confianza * 100).toFixed(0) + '% confianza' : '';
     if (data.finalizado) {
       textoEl.textContent = data.texto_actual;
       textoEl.className = 'texto-formado finalizado';
-      estadoEl.textContent = 'Mensaje completo';
+      estadoEl.textContent = 'Resultado detectado';
       estadoEl.className = 'estado-badge completado';
-    } else if (data.texto_actual) {
-      textoEl.innerHTML = data.texto_actual + '<span class="cursor">|</span>';
+    } else if (data.letra_actual || data.texto_actual) {
+      textoEl.innerHTML = escapeHTML(data.texto_actual || '') + '<span class="cursor">|</span>';
       textoEl.className = 'texto-formado';
-      estadoEl.textContent = 'Detectando';
+      estadoEl.textContent = 'Detectando…';
       estadoEl.className = 'estado-badge activo';
     } else {
       textoEl.innerHTML = '<span class="cursor">|</span>';
       textoEl.className = 'texto-formado';
-      estadoEl.textContent = 'Esperando senas';
+      estadoEl.textContent = 'Esperando seña…';
       estadoEl.className = 'estado-badge esperando';
     }
-
     const histEl = document.getElementById('historial');
-    if (data.historial && data.historial.length > 0) {
-      histEl.innerHTML = '<div class="texto-label">Historial de mensajes</div>' +
-        data.historial.map(h =>
-          '<div class="historial-item">' +
-            '<span class="historial-texto">' + h.texto + '</span>' +
-            '<span class="historial-hora">' + h.hora + '</span>' +
-          '</div>'
-        ).reverse().join('');
-    }
+    histEl.innerHTML = data.historial && data.historial.length > 0 ? '<div class="history-card"><div class="texto-label">Historial de mensajes</div>' + data.historial.map(h => `<div class="historial-item"><span class="historial-texto">${escapeHTML(h.texto)}</span><span class="historial-hora">${h.hora}</span></div>`).reverse().join('') + '</div>' : '';
   } catch (e) {}
 }
-
 setInterval(actualizar, 300);
+actualizar();
 </script>
 </body>
 </html>"""
